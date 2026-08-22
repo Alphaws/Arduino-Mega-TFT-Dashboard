@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Live Weather, Clock & Wi-Fi Network Monitor Dashboard for Arduino Mega ADK + TFT_320QVT
+// Production Startup Default Time (2026.01.01 00:00:00) until Live Sync
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -99,45 +99,46 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
-// System State
-int hours = 3;
-int minutes = 24;
-int seconds = 48;
+// Default Startup Time: 2026.01.01 00:00:00
+int hours = 0;
+int minutes = 0;
+int seconds = 0;
 int year = 2026;
-int month = 8;
-int day = 22;
+int month = 1;
+int day = 1;
 
+bool isSynced = false;
+
+char liveTemp[10] = "-- C";
+char liveDesc[15] = "VARAKOZAS";
+char liveHum[10] = "--%";
 char wifiSSID[20] = "aws01-24";
-int wifiRSSI = -58; // dBm (Strong signal)
+int wifiRSSI = -62;
 
 void Draw_Forecast_Cards() {
-  // Box 1: +3h (06:00)
   LCD_Fill_Rect(10, 90, 80, 185, 0x01E0);
-  LCD_Draw_String(22, 98, "06:00", 0xFFFF, 0x01E0, 1);
-  LCD_Draw_String(20, 115, "19 C", 0xFFE0, 0x01E0, 2);
-  LCD_Draw_String(18, 145, "ZAPOR", 0x07FF, 0x01E0, 1);
-  LCD_Draw_String(22, 165, "85%", 0x07FF, 0x01E0, 1);
+  LCD_Draw_String(22, 98, "MOST", 0xFFFF, 0x01E0, 1);
+  LCD_Draw_String(20, 115, liveTemp, 0xFFE0, 0x01E0, 2);
+  LCD_Draw_String(18, 145, liveDesc, 0xFFFF, 0x01E0, 1);
+  LCD_Draw_String(22, 165, liveHum, 0x07FF, 0x01E0, 1);
 
-  // Box 2: +6h (09:00)
   LCD_Fill_Rect(86, 90, 156, 185, 0x02E0);
-  LCD_Draw_String(98, 98, "09:00", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(96, 115, "23 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(98, 165, "70%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String(98, 98, "+3h", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(96, 115, "-- C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(92, 145, "----", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(98, 165, "--%", 0x07FF, 0x02E0, 1);
 
-  // Box 3: +9h (12:00)
   LCD_Fill_Rect(162, 90, 232, 185, 0x03E0);
-  LCD_Draw_String(174, 98, "12:00", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(172, 115, "27 C", 0xFFE0, 0x03E0, 2);
-  LCD_Draw_String(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(174, 165, "55%", 0x07FF, 0x03E0, 1);
+  LCD_Draw_String(174, 98, "+6h", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(172, 115, "-- C", 0xFFE0, 0x03E0, 2);
+  LCD_Draw_String(170, 145, "----", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(174, 165, "--%", 0x07FF, 0x03E0, 1);
 
-  // Box 4: +12h (15:00)
   LCD_Fill_Rect(238, 90, 309, 185, 0x02E0);
-  LCD_Draw_String(250, 98, "15:00", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(248, 115, "26 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(250, 165, "60%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String(250, 98, "+9h", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(248, 115, "-- C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(244, 145, "----", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(250, 165, "--%", 0x07FF, 0x02E0, 1);
 }
 
 void Draw_Forecast_UI() {
@@ -152,12 +153,22 @@ void Draw_Forecast_UI() {
 
   Draw_Forecast_Cards();
 
-  // Footer Bar with Wi-Fi Name & RSSI Signal Strength
+  // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
+  LCD_Draw_String(15, 210, "VARAKOZAS ADAT-SZINKRONRA...", 0xFFE0, 0x0015, 1);
+}
 
-  char wifiInfoBuffer[50];
-  snprintf(wifiInfoBuffer, sizeof(wifiInfoBuffer), "WIFI: %s  JEL: %d dBm (92%%)", wifiSSID, wifiRSSI);
-  LCD_Draw_String(15, 210, wifiInfoBuffer, 0x07E0, 0x0015, 1);
+void Parse_Sync_Command(String input) {
+  // Format: "SYNC:HH:MM:SS,YYYY.MM.DD"
+  if (input.startsWith("SYNC:")) {
+    hours = input.substring(5, 7).toInt();
+    minutes = input.substring(8, 10).toInt();
+    seconds = input.substring(11, 13).toInt();
+    year = input.substring(14, 18).toInt();
+    month = input.substring(19, 21).toInt();
+    day = input.substring(22, 24).toInt();
+    isSynced = true;
+  }
 }
 
 void setup() {
@@ -173,6 +184,11 @@ void setup() {
 void loop() {
   static uint32_t last_tick = 0;
 
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    Parse_Sync_Command(input);
+  }
+
   if (millis() - last_tick >= 1000) {
     last_tick = millis();
 
@@ -185,7 +201,7 @@ void loop() {
     char timeBuffer[25];
     snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%02d.%02d", hours, minutes, seconds, year, month, day);
 
-    // Refresh Top Clock/Date Bar
+    // Refresh Clock Bar
     LCD_Fill_Rect(15, 50, 304, 75, 0x1800);
     LCD_Draw_String(35, 55, timeBuffer, 0xFFFF, 0x1800, 2);
   }
