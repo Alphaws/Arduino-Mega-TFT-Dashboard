@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Production Startup Default Time (2026.01.01 00:00:00) until Live Sync
+// Auto-Request Sync Immediately on Startup for Arduino Mega ADK + TFT_320QVT
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -155,7 +155,7 @@ void Draw_Forecast_UI() {
 
   // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "VARAKOZAS ADAT-SZINKRONRA...", 0xFFE0, 0x0015, 1);
+  LCD_Draw_String(15, 210, "KERES INDITASA...", 0xFEE0, 0x0015, 1);
 }
 
 void Parse_Sync_Command(String input) {
@@ -168,6 +168,11 @@ void Parse_Sync_Command(String input) {
     month = input.substring(19, 21).toInt();
     day = input.substring(22, 24).toInt();
     isSynced = true;
+
+    LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
+    char buf[40];
+    snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (OK)", hours, minutes, seconds);
+    LCD_Draw_String(15, 210, buf, 0x07E0, 0x0015, 1);
   }
 }
 
@@ -179,14 +184,25 @@ void setup() {
 
   LCD_Init_Full();
   Draw_Forecast_UI();
+
+  // Send Immediate Sync Request Signal to USB Host / PC / WiFi Bridge upon startup
+  delay(200);
+  Serial.println("REQUEST_SYNC_NOW");
 }
 
 void loop() {
   static uint32_t last_tick = 0;
+  static uint32_t last_request = 0;
 
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     Parse_Sync_Command(input);
+  }
+
+  // Retry sending sync request every 5 seconds until first sync arrives
+  if (!isSynced && (millis() - last_request >= 5000)) {
+    last_request = millis();
+    Serial.println("REQUEST_SYNC_NOW");
   }
 
   if (millis() - last_tick >= 1000) {
