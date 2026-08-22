@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Direct Hardware Serial1 Engine (Mega ADK Pin 19 RX1 / Pin 18 TX1)
+// Dynamic Weather Forecast Parser & Rolling Dynamic Clock Hours for Mega ADK
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -113,31 +113,41 @@ int day = 1;
 
 bool isSynced = false;
 
-char liveTemp[10] = "19 C";
+char liveTemp[12] = "19 C";
 char liveDesc[15] = "ZAPOR";
-char liveHum[10] = "64%";
+char liveHum[12] = "64%";
 
 void Draw_Forecast_Cards() {
+  // Card 1: MOST (Current)
   LCD_Fill_Rect(10, 90, 80, 185, 0x01E0);
   LCD_Draw_String(22, 98, "MOST", 0xFFFF, 0x01E0, 1);
   LCD_Draw_String(20, 115, liveTemp, 0xFFE0, 0x01E0, 2);
   LCD_Draw_String(18, 145, liveDesc, 0xFFFF, 0x01E0, 1);
   LCD_Draw_String(22, 165, liveHum, 0x07FF, 0x01E0, 1);
 
+  // Dynamic Hours calculation based on current hours (+3h, +6h, +9h)
+  char h1Buf[8], h2Buf[8], h3Buf[8];
+  snprintf(h1Buf, sizeof(h1Buf), "%02d:00", (hours + 3) % 24);
+  snprintf(h2Buf, sizeof(h2Buf), "%02d:00", (hours + 6) % 24);
+  snprintf(h3Buf, sizeof(h3Buf), "%02d:00", (hours + 9) % 24);
+
+  // Card 2: +3 Hours
   LCD_Fill_Rect(86, 90, 156, 185, 0x02E0);
-  LCD_Draw_String(98, 98, "06:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(98, 98, h1Buf, 0xFFFF, 0x02E0, 1);
   LCD_Draw_String(96, 115, "21 C", 0xFFE0, 0x02E0, 2);
   LCD_Draw_String(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
   LCD_Draw_String(98, 165, "75%", 0x07FF, 0x02E0, 1);
 
+  // Card 3: +6 Hours
   LCD_Fill_Rect(162, 90, 232, 185, 0x03E0);
-  LCD_Draw_String(174, 98, "09:00", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(174, 98, h2Buf, 0xFFFF, 0x03E0, 1);
   LCD_Draw_String(172, 115, "24 C", 0xFFE0, 0x03E0, 2);
   LCD_Draw_String(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
   LCD_Draw_String(174, 165, "60%", 0x07FF, 0x03E0, 1);
 
+  // Card 4: +9 Hours
   LCD_Fill_Rect(238, 90, 309, 185, 0x02E0);
-  LCD_Draw_String(250, 98, "12:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(250, 98, h3Buf, 0xFFFF, 0x02E0, 1);
   LCD_Draw_String(248, 115, "27 C", 0xFFE0, 0x02E0, 2);
   LCD_Draw_String(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
   LCD_Draw_String(250, 165, "52%", 0x07FF, 0x02E0, 1);
@@ -172,12 +182,32 @@ void Parse_Sync_Command(String input) {
     char buf[50];
     snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (WIFI)", hours, minutes, seconds);
     Log_To_TFT_Footer(buf, 0x07E0);
+    Draw_Forecast_Cards();
+  }
+
+  if (input.indexOf("WEATHER:") != -1) {
+    int idx = input.indexOf("WEATHER:");
+    String data = input.substring(idx + 8);
+    int p1 = data.indexOf(',');
+    int p2 = data.indexOf(',', p1 + 1);
+
+    if (p1 != -1 && p2 != -1) {
+      String t = data.substring(0, p1);
+      String d = data.substring(p1 + 1, p2);
+      String h = data.substring(p2 + 1);
+
+      t.toCharArray(liveTemp, sizeof(liveTemp));
+      d.toCharArray(liveDesc, sizeof(liveDesc));
+      h.toCharArray(liveHum, sizeof(liveHum));
+
+      Draw_Forecast_Cards();
+    }
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200); // Direct Hardware UART Pin 19 (RX1) & Pin 18 (TX1)
+  Serial1.begin(115200);
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -190,13 +220,11 @@ void setup() {
 void loop() {
   static uint32_t last_tick = 0;
 
-  // Listen directly on Serial1 (Pin 19 RX1)
   if (Serial1.available()) {
     String msg = Serial1.readStringUntil('\n');
     Parse_Sync_Command(msg);
   }
 
-  // Listen on USB Serial fallback
   if (Serial.available()) {
     String msg = Serial.readStringUntil('\n');
     Parse_Sync_Command(msg);
@@ -208,7 +236,11 @@ void loop() {
     seconds++;
     if (seconds >= 60) {
       seconds = 0; minutes++;
-      if (minutes >= 60) { minutes = 0; hours++; if (hours >= 24) { hours = 0; day++; } }
+      if (minutes >= 60) {
+        minutes = 0; hours++;
+        if (hours >= 24) { hours = 0; day++; }
+        Draw_Forecast_Cards(); // Refresh rolling forecast card hours hourly
+      }
     }
 
     char timeBuffer[25];
