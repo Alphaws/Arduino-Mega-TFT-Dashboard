@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Universal Dual Serial Sync (USB Serial & Hardware Serial1 for WeMos)
+// Clean Startup: 00:00:00 (2026.01.01) with Continuous Active USB Serial Sync Engine
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -99,7 +99,7 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
-// Default Startup Time: 2026.01.01 00:00:00
+// Clean Default Startup Time: 2026.01.01 00:00:00
 int hours = 0;
 int minutes = 0;
 int seconds = 0;
@@ -159,13 +159,15 @@ void Draw_Forecast_UI() {
 }
 
 void Parse_Sync_Command(String input) {
-  if (input.startsWith("SYNC:")) {
-    hours = input.substring(5, 7).toInt();
-    minutes = input.substring(8, 10).toInt();
-    seconds = input.substring(11, 13).toInt();
-    year = input.substring(14, 18).toInt();
-    month = input.substring(19, 21).toInt();
-    day = input.substring(22, 24).toInt();
+  // Format: "SYNC:HH:MM:SS,YYYY.MM.DD"
+  if (input.indexOf("SYNC:") != -1) {
+    int idx = input.indexOf("SYNC:");
+    hours = input.substring(idx + 5, idx + 7).toInt();
+    minutes = input.substring(idx + 8, idx + 10).toInt();
+    seconds = input.substring(idx + 11, idx + 13).toInt();
+    year = input.substring(idx + 14, idx + 18).toInt();
+    month = input.substring(idx + 19, idx + 21).toInt();
+    day = input.substring(idx + 22, idx + 24).toInt();
     isSynced = true;
 
     LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
@@ -177,7 +179,7 @@ void Parse_Sync_Command(String input) {
 
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200); // Hardware Serial1 for WeMos RX/TX
+  Serial1.begin(115200);
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -195,7 +197,7 @@ void loop() {
   static uint32_t last_tick = 0;
   static uint32_t last_request = 0;
 
-  // Listen to both USB Serial and Hardware Serial1
+  // Listen on Serial
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     Parse_Sync_Command(input);
@@ -205,8 +207,8 @@ void loop() {
     Parse_Sync_Command(input);
   }
 
-  // Auto-request retry every 3 seconds until synced
-  if (!isSynced && (millis() - last_request >= 3000)) {
+  // Active sync request retry every 2 seconds until first valid sync arrives
+  if (!isSynced && (millis() - last_request >= 2000)) {
     last_request = millis();
     Serial.println("REQUEST_SYNC_NOW");
     Serial1.println("REQUEST_SYNC_NOW");
@@ -222,7 +224,7 @@ void loop() {
     }
 
     char timeBuffer[25];
-    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%02d.%02d", hours, minutes, seconds, year, month, day);
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%01d.%02d", hours, minutes, seconds, year, month, day);
 
     // Refresh Clock Bar
     LCD_Fill_Rect(15, 50, 304, 75, 0x1800);
