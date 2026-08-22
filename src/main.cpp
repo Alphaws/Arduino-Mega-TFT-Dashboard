@@ -3,7 +3,7 @@
 #include <cdcftdi.h>
 #include <cdcacm.h>
 
-// Full Native MAX3421E USB Host Stack for Arduino Mega ADK + WeMos CDC Serial
+// Full Native MAX3421E USB Host Driver (FTDI + CDC/ACM Dual Parser) for Mega ADK
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -102,10 +102,16 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
+void Log_To_TFT_Footer(const char *msg, unsigned int color = 0xFFE0) {
+  LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
+  LCD_Draw_String(10, 210, msg, color, 0x0015, 1);
+}
+
 class FTDIAsync : public FTDIAsyncOper {
 public:
   uint8_t OnInit(FTDI *pftdi) {
     pftdi->SetBaudRate(115200);
+    Log_To_TFT_Footer("CH340/FTDI ESZKOZ FELISMERVE!", 0x07E0);
     return 0;
   }
 };
@@ -113,6 +119,10 @@ public:
 USB Usb;
 FTDIAsync FtdiAsync;
 FTDI Ftdi(&Usb, &FtdiAsync);
+
+// CDC/ACM Driver Fallback for WeMos D1 Mini V3.0 CDC Class
+CDCAsyncOper CdcAsyncOper;
+ACM Acm(&Usb, &CdcAsyncOper);
 
 int hours = 0;
 int minutes = 0;
@@ -165,9 +175,7 @@ void Draw_Forecast_UI() {
 
   Draw_Forecast_Cards();
 
-  // Footer Bar
-  LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "MAX3421E USB HOST CH340 DRIVER...", 0xFFE0, 0x0015, 1);
+  Log_To_TFT_Footer("MAX3421E USB HOST CH340/ACM...", 0xFFE0);
 }
 
 void Parse_Sync_Command(String input) {
@@ -181,10 +189,9 @@ void Parse_Sync_Command(String input) {
     day = input.substring(idx + 22, idx + 24).toInt();
     isSynced = true;
 
-    LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
     char buf[50];
     snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (WIFI)", hours, minutes, seconds);
-    LCD_Draw_String(15, 210, buf, 0x07E0, 0x0015, 1);
+    Log_To_TFT_Footer(buf, 0x07E0);
   }
 }
 
@@ -199,21 +206,53 @@ void setup() {
   Draw_Forecast_UI();
 
   if (Usb.Init() == -1) {
-    Serial.println("USB Host Init Fail");
+    Log_To_TFT_Footer("USB HOST CHIP HIBA (-1)", 0xF800);
+  } else {
+    Log_To_TFT_Footer("USB HOST OK, WEMOS KERESES...", 0xFFE0);
   }
   delay(200);
 }
 
 void loop() {
   static uint32_t last_tick = 0;
+  static uint32_t last_status_check = 0;
 
   Usb.Task();
 
+  if (!isSynced && (millis() - last_status_check >= 2500)) {
+    last_status_check = millis();
+    uint8_t state = Usb.getUsbTaskState();
+    if (state == USB_STATE_RUNNING) {
+      if (Ftdi.isReady() || Acm.isReady()) {
+        Log_To_TFT_Footer("WEMOS KESZ, ADATRA VAR...", 0x07E0);
+      } else {
+        Log_To_TFT_Footer("USB BUSZ FUT, ESZKOZ ILLESZTES...", 0xFFE0);
+      }
+    } else {
+      char statusBuf[40];
+      snprintf(statusBuf, sizeof(statusBuf), "USB STATE: 0x%02X (VARAKOZAS)", state);
+      Log_To_TFT_Footer(statusBuf, 0xFEE0);
+    }
+  }
+
+  // Poll Data from FTDI (CH340) Driver
   if (Ftdi.isReady()) {
     uint8_t rcode;
     uint8_t buf[64];
     uint16_t rcvd = 64;
     rcode = Ftdi.RcvData(&rcvd, buf);
+    if (rcode == 0 && rcvd > 0) {
+      buf[rcvd] = 0;
+      Parse_Sync_Command((char*)buf);
+    }
+  }
+
+  // Poll Data from CDC/ACM Driver
+  if (Acm.isReady()) {
+    uint8_t rcode;
+    uint8_t buf[64];
+    uint16_t rcvd = 64;
+    rcode = Acm.RcvData(&rcvd, buf);
     if (rcode == 0 && rcvd > 0) {
       buf[rcvd] = 0;
       Parse_Sync_Command((char*)buf);
