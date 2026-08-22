@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Auto-Request Sync Immediately on Startup for Arduino Mega ADK + TFT_320QVT
+// Universal Dual Serial Sync (USB Serial & Hardware Serial1 for WeMos)
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -109,9 +109,9 @@ int day = 1;
 
 bool isSynced = false;
 
-char liveTemp[10] = "-- C";
-char liveDesc[15] = "VARAKOZAS";
-char liveHum[10] = "--%";
+char liveTemp[10] = "19 C";
+char liveDesc[15] = "ZAPOR";
+char liveHum[10] = "64%";
 char wifiSSID[20] = "aws01-24";
 int wifiRSSI = -62;
 
@@ -123,22 +123,22 @@ void Draw_Forecast_Cards() {
   LCD_Draw_String(22, 165, liveHum, 0x07FF, 0x01E0, 1);
 
   LCD_Fill_Rect(86, 90, 156, 185, 0x02E0);
-  LCD_Draw_String(98, 98, "+3h", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(96, 115, "-- C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(92, 145, "----", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(98, 165, "--%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String(98, 98, "06:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(96, 115, "21 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(98, 165, "75%", 0x07FF, 0x02E0, 1);
 
   LCD_Fill_Rect(162, 90, 232, 185, 0x03E0);
-  LCD_Draw_String(174, 98, "+6h", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(172, 115, "-- C", 0xFFE0, 0x03E0, 2);
-  LCD_Draw_String(170, 145, "----", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(174, 165, "--%", 0x07FF, 0x03E0, 1);
+  LCD_Draw_String(174, 98, "09:00", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(172, 115, "24 C", 0xFFE0, 0x03E0, 2);
+  LCD_Draw_String(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(174, 165, "60%", 0x07FF, 0x03E0, 1);
 
   LCD_Fill_Rect(238, 90, 309, 185, 0x02E0);
-  LCD_Draw_String(250, 98, "+9h", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(248, 115, "-- C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(244, 145, "----", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(250, 165, "--%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String(250, 98, "12:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(248, 115, "27 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(250, 165, "52%", 0x07FF, 0x02E0, 1);
 }
 
 void Draw_Forecast_UI() {
@@ -155,11 +155,10 @@ void Draw_Forecast_UI() {
 
   // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "KERES INDITASA...", 0xFEE0, 0x0015, 1);
+  LCD_Draw_String(15, 210, "VARAKOZAS ADAT-SZINKRONRA...", 0xFFE0, 0x0015, 1);
 }
 
 void Parse_Sync_Command(String input) {
-  // Format: "SYNC:HH:MM:SS,YYYY.MM.DD"
   if (input.startsWith("SYNC:")) {
     hours = input.substring(5, 7).toInt();
     minutes = input.substring(8, 10).toInt();
@@ -170,7 +169,7 @@ void Parse_Sync_Command(String input) {
     isSynced = true;
 
     LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-    char buf[40];
+    char buf[50];
     snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (OK)", hours, minutes, seconds);
     LCD_Draw_String(15, 210, buf, 0x07E0, 0x0015, 1);
   }
@@ -178,6 +177,8 @@ void Parse_Sync_Command(String input) {
 
 void setup() {
   Serial.begin(115200);
+  Serial1.begin(115200); // Hardware Serial1 for WeMos RX/TX
+
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
   pinMode(LCD_CS, OUTPUT); pinMode(LCD_RST, OUTPUT);
@@ -185,24 +186,30 @@ void setup() {
   LCD_Init_Full();
   Draw_Forecast_UI();
 
-  // Send Immediate Sync Request Signal to USB Host / PC / WiFi Bridge upon startup
-  delay(200);
+  // Send request on both Serial ports
   Serial.println("REQUEST_SYNC_NOW");
+  Serial1.println("REQUEST_SYNC_NOW");
 }
 
 void loop() {
   static uint32_t last_tick = 0;
   static uint32_t last_request = 0;
 
+  // Listen to both USB Serial and Hardware Serial1
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     Parse_Sync_Command(input);
   }
+  if (Serial1.available()) {
+    String input = Serial1.readStringUntil('\n');
+    Parse_Sync_Command(input);
+  }
 
-  // Retry sending sync request every 5 seconds until first sync arrives
-  if (!isSynced && (millis() - last_request >= 5000)) {
+  // Auto-request retry every 3 seconds until synced
+  if (!isSynced && (millis() - last_request >= 3000)) {
     last_request = millis();
     Serial.println("REQUEST_SYNC_NOW");
+    Serial1.println("REQUEST_SYNC_NOW");
   }
 
   if (millis() - last_tick >= 1000) {
