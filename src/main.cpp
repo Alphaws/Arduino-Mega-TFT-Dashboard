@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Full Autonomous MAX3421E USB Host CDC Driver for Arduino Mega ADK + WeMos D1 Mini
+// Dynamic Multi-Baud Auto-Scanner & Full Sync Receiver for Mega ADK
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -109,11 +109,12 @@ int day = 1;
 
 bool isSynced = false;
 
+long bauds[] = {115200, 74880, 9600, 57600, 19200};
+uint8_t currentBaudIdx = 0;
+
 char liveTemp[10] = "19 C";
 char liveDesc[15] = "ZAPOR";
 char liveHum[10] = "64%";
-char wifiSSID[20] = "aws01-24";
-int wifiRSSI = -62;
 
 void Draw_Forecast_Cards() {
   LCD_Fill_Rect(10, 90, 80, 185, 0x01E0);
@@ -155,7 +156,7 @@ void Draw_Forecast_UI() {
 
   // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "MAX3421E USB HOST KAPCSOLODAS...", 0xFFE0, 0x0015, 1);
+  LCD_Draw_String(15, 210, "AUTOMATIKUS SEBESSEG KERESES...", 0xFFE0, 0x0015, 1);
 }
 
 void Parse_Sync_Command(String input) {
@@ -177,7 +178,8 @@ void Parse_Sync_Command(String input) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(bauds[currentBaudIdx]);
+  Serial1.begin(bauds[currentBaudIdx]);
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -185,23 +187,21 @@ void setup() {
 
   LCD_Init_Full();
   Draw_Forecast_UI();
-
-  // Send initial request
-  Serial.println("REQUEST_SYNC_NOW");
 }
 
 void loop() {
   static uint32_t last_tick = 0;
-  static uint32_t last_request = 0;
+  static uint32_t last_scan = 0;
 
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');
-    Parse_Sync_Command(input);
-  }
+  if (Serial.available()) { Parse_Sync_Command(Serial.readStringUntil('\n')); }
+  if (Serial1.available()) { Parse_Sync_Command(Serial1.readStringUntil('\n')); }
 
-  if (!isSynced && (millis() - last_request >= 2000)) {
-    last_request = millis();
-    Serial.println("REQUEST_SYNC_NOW");
+  // Auto-scan baud rates every 2 seconds if sync hasn't arrived
+  if (!isSynced && (millis() - last_scan >= 2000)) {
+    last_scan = millis();
+    currentBaudIdx = (currentBaudIdx + 1) % 5;
+    Serial.begin(bauds[currentBaudIdx]);
+    Serial1.begin(bauds[currentBaudIdx]);
   }
 
   if (millis() - last_tick >= 1000) {
