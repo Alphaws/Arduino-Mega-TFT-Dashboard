@@ -1,6 +1,9 @@
 #include <Arduino.h>
+#include <Usb.h>
+#include <cdcftdi.h>
+#include <cdcacm.h>
 
-// Dynamic Multi-Baud Auto-Scanner & Full Sync Receiver for Mega ADK
+// Full Native MAX3421E USB Host Stack for Arduino Mega ADK + WeMos CDC Serial
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -99,7 +102,18 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
-// System Time
+class FTDIAsync : public FTDIAsyncOper {
+public:
+  uint8_t OnInit(FTDI *pftdi) {
+    pftdi->SetBaudRate(115200);
+    return 0;
+  }
+};
+
+USB Usb;
+FTDIAsync FtdiAsync;
+FTDI Ftdi(&Usb, &FtdiAsync);
+
 int hours = 0;
 int minutes = 0;
 int seconds = 0;
@@ -108,9 +122,6 @@ int month = 1;
 int day = 1;
 
 bool isSynced = false;
-
-long bauds[] = {115200, 74880, 9600, 57600, 19200};
-uint8_t currentBaudIdx = 0;
 
 char liveTemp[10] = "19 C";
 char liveDesc[15] = "ZAPOR";
@@ -156,7 +167,7 @@ void Draw_Forecast_UI() {
 
   // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "AUTOMATIKUS SEBESSEG KERESES...", 0xFFE0, 0x0015, 1);
+  LCD_Draw_String(15, 210, "MAX3421E USB HOST CH340 DRIVER...", 0xFFE0, 0x0015, 1);
 }
 
 void Parse_Sync_Command(String input) {
@@ -178,8 +189,7 @@ void Parse_Sync_Command(String input) {
 }
 
 void setup() {
-  Serial.begin(bauds[currentBaudIdx]);
-  Serial1.begin(bauds[currentBaudIdx]);
+  Serial.begin(115200);
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -187,21 +197,27 @@ void setup() {
 
   LCD_Init_Full();
   Draw_Forecast_UI();
+
+  if (Usb.Init() == -1) {
+    Serial.println("USB Host Init Fail");
+  }
+  delay(200);
 }
 
 void loop() {
   static uint32_t last_tick = 0;
-  static uint32_t last_scan = 0;
 
-  if (Serial.available()) { Parse_Sync_Command(Serial.readStringUntil('\n')); }
-  if (Serial1.available()) { Parse_Sync_Command(Serial1.readStringUntil('\n')); }
+  Usb.Task();
 
-  // Auto-scan baud rates every 2 seconds if sync hasn't arrived
-  if (!isSynced && (millis() - last_scan >= 2000)) {
-    last_scan = millis();
-    currentBaudIdx = (currentBaudIdx + 1) % 5;
-    Serial.begin(bauds[currentBaudIdx]);
-    Serial1.begin(bauds[currentBaudIdx]);
+  if (Ftdi.isReady()) {
+    uint8_t rcode;
+    uint8_t buf[64];
+    uint16_t rcvd = 64;
+    rcode = Ftdi.RcvData(&rcvd, buf);
+    if (rcode == 0 && rcvd > 0) {
+      buf[rcvd] = 0;
+      Parse_Sync_Command((char*)buf);
+    }
   }
 
   if (millis() - last_tick >= 1000) {
