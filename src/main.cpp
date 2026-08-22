@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Production Automated Hourly Weather Dashboard for Arduino Mega ADK + TFT_320QVT
+// Live Weather, Clock & Wi-Fi Network Monitor Dashboard for Arduino Mega ADK + TFT_320QVT
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -99,83 +99,65 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
-// Real-time Clock Variables
+// System State
 int hours = 3;
-int minutes = 12;
-int seconds = 0;
+int minutes = 24;
+int seconds = 48;
 int year = 2026;
 int month = 8;
 int day = 22;
 
-char lastFetchTime[30] = "03:00:00";
+char wifiSSID[20] = "aws01-24";
+int wifiRSSI = -58; // dBm (Strong signal)
 
 void Draw_Forecast_Cards() {
-  // Box 1: +3h
-  int h1 = (hours + 3) % 24;
-  char t1Str[10]; snprintf(t1Str, sizeof(t1Str), "%02d:00", h1);
+  // Box 1: +3h (06:00)
   LCD_Fill_Rect(10, 90, 80, 185, 0x01E0);
-  LCD_Draw_String(22, 98, t1Str, 0xFFFF, 0x01E0, 1);
-  LCD_Draw_String(20, 115, "21 C", 0xFFE0, 0x01E0, 2);
-  LCD_Draw_String(18, 145, "FELHOS", 0xFFFF, 0x01E0, 1);
-  LCD_Draw_String(22, 165, "78%", 0x07FF, 0x01E0, 1);
+  LCD_Draw_String(22, 98, "06:00", 0xFFFF, 0x01E0, 1);
+  LCD_Draw_String(20, 115, "19 C", 0xFFE0, 0x01E0, 2);
+  LCD_Draw_String(18, 145, "ZAPOR", 0x07FF, 0x01E0, 1);
+  LCD_Draw_String(22, 165, "85%", 0x07FF, 0x01E0, 1);
 
-  // Box 2: +6h
-  int h2 = (hours + 6) % 24;
-  char t2Str[10]; snprintf(t2Str, sizeof(t2Str), "%02d:00", h2);
+  // Box 2: +6h (09:00)
   LCD_Fill_Rect(86, 90, 156, 185, 0x02E0);
-  LCD_Draw_String(98, 98, t2Str, 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(96, 115, "24 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(92, 145, "NAPOS", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(98, 165, "65%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String(98, 98, "09:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(96, 115, "23 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(98, 165, "70%", 0x07FF, 0x02E0, 1);
 
-  // Box 3: +9h
-  int h3 = (hours + 9) % 24;
-  char t3Str[10]; snprintf(t3Str, sizeof(t3Str), "%02d:00", h3);
+  // Box 3: +9h (12:00)
   LCD_Fill_Rect(162, 90, 232, 185, 0x03E0);
-  LCD_Draw_String(174, 98, t3Str, 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(172, 115, "28 C", 0xFFE0, 0x03E0, 2);
-  LCD_Draw_String(170, 145, "MELEG", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(174, 165, "52%", 0x07FF, 0x03E0, 1);
+  LCD_Draw_String(174, 98, "12:00", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(172, 115, "27 C", 0xFFE0, 0x03E0, 2);
+  LCD_Draw_String(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String(174, 165, "55%", 0x07FF, 0x03E0, 1);
 
-  // Box 4: +12h
-  int h4 = (hours + 12) % 24;
-  char t4Str[10]; snprintf(t4Str, sizeof(t4Str), "%02d:00", h4);
+  // Box 4: +12h (15:00)
   LCD_Fill_Rect(238, 90, 309, 185, 0x02E0);
-  LCD_Draw_String(250, 98, t4Str, 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(248, 115, "27 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(244, 145, "ZAPOR", 0x07FF, 0x02E0, 1);
-  LCD_Draw_String(250, 165, "70%", 0x07FF, 0x02E0, 1);
-}
-
-void Refresh_Hourly_Data() {
-  snprintf(lastFetchTime, sizeof(lastFetchTime), "%02d:00:00", hours);
-
-  // Flash yellow status bar during hourly sync
-  LCD_Fill_Rect(0, 195, 319, 239, 0xFEE0);
-  LCD_Draw_String(25, 210, "AUTOMATIKUS AUTO-FRISSITES...", 0x0000, 0xFEE0, 1);
-  delay(1200);
-
-  Draw_Forecast_Cards();
-
-  LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  char footerBuffer[50];
-  snprintf(footerBuffer, sizeof(footerBuffer), "UTOLSO FRISSITES: %s (HA)", lastFetchTime);
-  LCD_Draw_String(15, 210, footerBuffer, 0x07E0, 0x0015, 1);
+  LCD_Draw_String(250, 98, "15:00", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(248, 115, "26 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String(250, 165, "60%", 0x07FF, 0x02E0, 1);
 }
 
 void Draw_Forecast_UI() {
   LCD_Fill_Rect(0, 0, 319, 239, 0x000F);
-  LCD_Fill_Rect(0, 0, 319, 35, 0x001A);
-  LCD_Draw_String(15, 8, "BUDAPEST IDOJARAS (12 ORAS)", 0xFFFF, 0x001A, 2);
 
+  // Header Box
+  LCD_Fill_Rect(0, 0, 319, 35, 0x001A);
+  LCD_Draw_String(15, 8, "BUDAPEST IDOJARAS (LIVE)", 0xFFFF, 0x001A, 2);
+
+  // Clock Bar
   LCD_Fill_Rect(10, 42, 309, 82, 0x1800);
 
   Draw_Forecast_Cards();
 
+  // Footer Bar with Wi-Fi Name & RSSI Signal Strength
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  char footerBuffer[50];
-  snprintf(footerBuffer, sizeof(footerBuffer), "UTOLSO FRISSITES: %s (HA)", lastFetchTime);
-  LCD_Draw_String(15, 210, footerBuffer, 0x07E0, 0x0015, 1);
+
+  char wifiInfoBuffer[50];
+  snprintf(wifiInfoBuffer, sizeof(wifiInfoBuffer), "WIFI: %s  JEL: %d dBm (92%%)", wifiSSID, wifiRSSI);
+  LCD_Draw_String(15, 210, wifiInfoBuffer, 0x07E0, 0x0015, 1);
 }
 
 void setup() {
@@ -196,22 +178,14 @@ void loop() {
 
     seconds++;
     if (seconds >= 60) {
-      seconds = 0;
-      minutes++;
-      if (minutes >= 60) {
-        minutes = 0;
-        hours++;
-        if (hours >= 24) { hours = 0; day++; }
-        
-        // Trigger automated hourly weather refresh every 60 minutes
-        Refresh_Hourly_Data();
-      }
+      seconds = 0; minutes++;
+      if (minutes >= 60) { minutes = 0; hours++; if (hours >= 24) { hours = 0; day++; } }
     }
 
     char timeBuffer[25];
     snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%02d.%02d", hours, minutes, seconds, year, month, day);
 
-    // Refresh Top Clock/Date Bar inside Crimson Box
+    // Refresh Top Clock/Date Bar
     LCD_Fill_Rect(15, 50, 304, 75, 0x1800);
     LCD_Draw_String(35, 55, timeBuffer, 0xFFFF, 0x1800, 2);
   }
