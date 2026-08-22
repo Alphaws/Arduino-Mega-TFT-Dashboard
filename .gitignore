@@ -1,0 +1,6 @@
+.git
+.pio
+.vscode
+node_modules
+*.tmp
+.env
