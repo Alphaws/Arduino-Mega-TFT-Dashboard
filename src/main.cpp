@@ -1,9 +1,6 @@
 #include <Arduino.h>
-#include <Usb.h>
-#include <cdcftdi.h>
-#include <cdcacm.h>
 
-// Full Native MAX3421E USB Host Driver + Force Bus Reading & Low-Level Register Override
+// Direct Hardware Serial1 Engine (Mega ADK Pin 19 RX1 / Pin 18 TX1)
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -107,22 +104,6 @@ void Log_To_TFT_Footer(const char *msg, unsigned int color = 0xFFE0) {
   LCD_Draw_String(10, 210, msg, color, 0x0015, 1);
 }
 
-class FTDIAsync : public FTDIAsyncOper {
-public:
-  uint8_t OnInit(FTDI *pftdi) {
-    pftdi->SetBaudRate(115200);
-    Log_To_TFT_Footer("CH340 ESZKOZ FELISMERVE!", 0x07E0);
-    return 0;
-  }
-};
-
-USB Usb;
-FTDIAsync FtdiAsync;
-FTDI Ftdi(&Usb, &FtdiAsync);
-
-CDCAsyncOper CdcAsyncOper;
-ACM Acm(&Usb, &CdcAsyncOper);
-
 int hours = 0;
 int minutes = 0;
 int seconds = 0;
@@ -174,7 +155,7 @@ void Draw_Forecast_UI() {
 
   Draw_Forecast_Cards();
 
-  Log_To_TFT_Footer("MAX3421E FORCE BUS READ...", 0xFFE0);
+  Log_To_TFT_Footer("VARAKOZAS SERIAL1 WEMOS ADATRA...", 0xFFE0);
 }
 
 void Parse_Sync_Command(String input) {
@@ -196,6 +177,7 @@ void Parse_Sync_Command(String input) {
 
 void setup() {
   Serial.begin(115200);
+  Serial1.begin(115200); // Direct Hardware UART Pin 19 (RX1) & Pin 18 (TX1)
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -203,47 +185,21 @@ void setup() {
 
   LCD_Init_Full();
   Draw_Forecast_UI();
-
-  if (Usb.Init() == -1) {
-    Log_To_TFT_Footer("USB HOST CHIP HIBA (-1)", 0xF800);
-  } else {
-    Log_To_TFT_Footer("USB BUS OVERRIDE FORCE READ!", 0xFFE0);
-  }
-  delay(200);
 }
 
 void loop() {
   static uint32_t last_tick = 0;
-  static uint32_t last_status_check = 0;
 
-  Usb.Task();
-
-  // FORCE READ OVERRIDE: Ignore USB_STATE_WAIT_FOR_DEVICE (0x12) and force read
-  uint8_t rcode;
-  uint8_t buf[64];
-  uint16_t rcvd = 64;
-
-  // Force Poll FTDI/CH340
-  rcode = Ftdi.RcvData(&rcvd, buf);
-  if (rcode == 0 && rcvd > 0) {
-    buf[rcvd] = 0;
-    Parse_Sync_Command((char*)buf);
+  // Listen directly on Serial1 (Pin 19 RX1)
+  if (Serial1.available()) {
+    String msg = Serial1.readStringUntil('\n');
+    Parse_Sync_Command(msg);
   }
 
-  // Force Poll CDC/ACM
-  rcvd = 64;
-  rcode = Acm.RcvData(&rcvd, buf);
-  if (rcode == 0 && rcvd > 0) {
-    buf[rcvd] = 0;
-    Parse_Sync_Command((char*)buf);
-  }
-
-  if (!isSynced && (millis() - last_status_check >= 2500)) {
-    last_status_check = millis();
-    uint8_t state = Usb.getUsbTaskState();
-    char statusBuf[40];
-    snprintf(statusBuf, sizeof(statusBuf), "BUS FORCE READ (STATE: 0x%02X)", state);
-    Log_To_TFT_Footer(statusBuf, 0xFFE0);
+  // Listen on USB Serial fallback
+  if (Serial.available()) {
+    String msg = Serial.readStringUntil('\n');
+    Parse_Sync_Command(msg);
   }
 
   if (millis() - last_tick >= 1000) {
