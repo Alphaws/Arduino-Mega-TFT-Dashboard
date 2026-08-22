@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Dynamic Weather Forecast Parser & Rolling Dynamic Clock Hours for Mega ADK
+// Flicker-Free Smart Redraw LCD Engine for Arduino Mega ADK
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -64,24 +64,33 @@ void LCD_Draw_Pixel(unsigned int x, unsigned int y, unsigned int color) {
   digitalWrite(LCD_WR, LOW); digitalWrite(LCD_WR, HIGH);
 }
 
-void LCD_Draw_Char(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int bg, uint8_t size) {
+// Smart Flicker-Free Character Redraw with Background Overwrite
+void LCD_Draw_Char_FlickerFree(unsigned int x, unsigned int y, char c, unsigned int color, unsigned int bg, uint8_t size) {
   if (c < 32 || c > 126) c = '?';
   uint8_t idx = c - 32;
   for (int8_t i = 0; i < 5; i++) {
     uint8_t line = pgm_read_byte(&font5x7[idx][i]);
     for (int8_t j = 0; j < 8; j++) {
-      if (line & 0x01) {
-        if (size == 1) LCD_Draw_Pixel(x + i, y + j, color);
-        else LCD_Fill_Rect(x + i * size, y + j * size, x + (i + 1) * size - 1, y + (j + 1) * size - 1, color);
+      unsigned int pixelColor = (line & 0x01) ? color : bg;
+      if (size == 1) {
+        LCD_Draw_Pixel(x + i, y + j, pixelColor);
+      } else {
+        LCD_Fill_Rect(x + i * size, y + j * size, x + (i + 1) * size - 1, y + (j + 1) * size - 1, pixelColor);
       }
       line >>= 1;
     }
   }
+  // Clear character right spacing
+  if (size == 1) {
+    for (int8_t j = 0; j < 8; j++) LCD_Draw_Pixel(x + 5, y + j, bg);
+  } else {
+    LCD_Fill_Rect(x + 5 * size, y, x + 6 * size - 1, y + 8 * size - 1, bg);
+  }
 }
 
-void LCD_Draw_String(unsigned int x, unsigned int y, const char *str, unsigned int color, unsigned int bg, uint8_t size) {
+void LCD_Draw_String_FlickerFree(unsigned int x, unsigned int y, const char *str, unsigned int color, unsigned int bg, uint8_t size) {
   while (*str) {
-    LCD_Draw_Char(x, y, *str, color, bg, size);
+    LCD_Draw_Char_FlickerFree(x, y, *str, color, bg, size);
     x += 6 * size;
     str++;
   }
@@ -101,7 +110,7 @@ void LCD_Init_Full() {
 
 void Log_To_TFT_Footer(const char *msg, unsigned int color = 0xFFE0) {
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(10, 210, msg, color, 0x0015, 1);
+  LCD_Draw_String_FlickerFree(10, 210, msg, color, 0x0015, 1);
 }
 
 int hours = 0;
@@ -118,39 +127,38 @@ char liveDesc[15] = "ZAPOR";
 char liveHum[12] = "64%";
 
 void Draw_Forecast_Cards() {
-  // Card 1: MOST (Current)
+  // Card 1: MOST
   LCD_Fill_Rect(10, 90, 80, 185, 0x01E0);
-  LCD_Draw_String(22, 98, "MOST", 0xFFFF, 0x01E0, 1);
-  LCD_Draw_String(20, 115, liveTemp, 0xFFE0, 0x01E0, 2);
-  LCD_Draw_String(18, 145, liveDesc, 0xFFFF, 0x01E0, 1);
-  LCD_Draw_String(22, 165, liveHum, 0x07FF, 0x01E0, 1);
+  LCD_Draw_String_FlickerFree(22, 98, "MOST", 0xFFFF, 0x01E0, 1);
+  LCD_Draw_String_FlickerFree(20, 115, liveTemp, 0xFFE0, 0x01E0, 2);
+  LCD_Draw_String_FlickerFree(18, 145, liveDesc, 0xFFFF, 0x01E0, 1);
+  LCD_Draw_String_FlickerFree(22, 165, liveHum, 0x07FF, 0x01E0, 1);
 
-  // Dynamic Hours calculation based on current hours (+3h, +6h, +9h)
   char h1Buf[8], h2Buf[8], h3Buf[8];
   snprintf(h1Buf, sizeof(h1Buf), "%02d:00", (hours + 3) % 24);
   snprintf(h2Buf, sizeof(h2Buf), "%02d:00", (hours + 6) % 24);
   snprintf(h3Buf, sizeof(h3Buf), "%02d:00", (hours + 9) % 24);
 
-  // Card 2: +3 Hours
+  // Card 2
   LCD_Fill_Rect(86, 90, 156, 185, 0x02E0);
-  LCD_Draw_String(98, 98, h1Buf, 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(96, 115, "21 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(98, 165, "75%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(98, 98, h1Buf, 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(96, 115, "21 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String_FlickerFree(92, 145, "FELHOS", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(98, 165, "75%", 0x07FF, 0x02E0, 1);
 
-  // Card 3: +6 Hours
+  // Card 3
   LCD_Fill_Rect(162, 90, 232, 185, 0x03E0);
-  LCD_Draw_String(174, 98, h2Buf, 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(172, 115, "24 C", 0xFFE0, 0x03E0, 2);
-  LCD_Draw_String(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
-  LCD_Draw_String(174, 165, "60%", 0x07FF, 0x03E0, 1);
+  LCD_Draw_String_FlickerFree(174, 98, h2Buf, 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String_FlickerFree(172, 115, "24 C", 0xFFE0, 0x03E0, 2);
+  LCD_Draw_String_FlickerFree(170, 145, "NAPOS", 0xFFFF, 0x03E0, 1);
+  LCD_Draw_String_FlickerFree(174, 165, "60%", 0x07FF, 0x03E0, 1);
 
-  // Card 4: +9 Hours
+  // Card 4
   LCD_Fill_Rect(238, 90, 309, 185, 0x02E0);
-  LCD_Draw_String(250, 98, h3Buf, 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(248, 115, "27 C", 0xFFE0, 0x02E0, 2);
-  LCD_Draw_String(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
-  LCD_Draw_String(250, 165, "52%", 0x07FF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(250, 98, h3Buf, 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(248, 115, "27 C", 0xFFE0, 0x02E0, 2);
+  LCD_Draw_String_FlickerFree(244, 145, "MELEG", 0xFFFF, 0x02E0, 1);
+  LCD_Draw_String_FlickerFree(250, 165, "52%", 0x07FF, 0x02E0, 1);
 }
 
 void Draw_Forecast_UI() {
@@ -158,7 +166,7 @@ void Draw_Forecast_UI() {
 
   // Header Box
   LCD_Fill_Rect(0, 0, 319, 35, 0x001A);
-  LCD_Draw_String(15, 8, "BUDAPEST IDOJARAS (LIVE)", 0xFFFF, 0x001A, 2);
+  LCD_Draw_String_FlickerFree(15, 8, "BUDAPEST IDOJARAS (LIVE)", 0xFFFF, 0x001A, 2);
 
   // Clock Bar
   LCD_Fill_Rect(10, 42, 309, 82, 0x1800);
@@ -171,6 +179,7 @@ void Draw_Forecast_UI() {
 void Parse_Sync_Command(String input) {
   if (input.indexOf("SYNC:") != -1) {
     int idx = input.indexOf("SYNC:");
+    int oldH = hours;
     hours = input.substring(idx + 5, idx + 7).toInt();
     minutes = input.substring(idx + 8, idx + 10).toInt();
     seconds = input.substring(idx + 11, idx + 13).toInt();
@@ -182,7 +191,8 @@ void Parse_Sync_Command(String input) {
     char buf[50];
     snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (WIFI)", hours, minutes, seconds);
     Log_To_TFT_Footer(buf, 0x07E0);
-    Draw_Forecast_Cards();
+
+    if (oldH != hours) Draw_Forecast_Cards();
   }
 
   if (input.indexOf("WEATHER:") != -1) {
@@ -239,15 +249,14 @@ void loop() {
       if (minutes >= 60) {
         minutes = 0; hours++;
         if (hours >= 24) { hours = 0; day++; }
-        Draw_Forecast_Cards(); // Refresh rolling forecast card hours hourly
+        Draw_Forecast_Cards();
       }
     }
 
     char timeBuffer[25];
     snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%02d.%02d", hours, minutes, seconds, year, month, day);
 
-    // Refresh Clock Bar
-    LCD_Fill_Rect(15, 50, 304, 75, 0x1800);
-    LCD_Draw_String(35, 55, timeBuffer, 0xFFFF, 0x1800, 2);
+    // FLICKER-FREE SMART REDRAW: Write text over existing background without clearing full rectangle!
+    LCD_Draw_String_FlickerFree(35, 55, timeBuffer, 0xFFFF, 0x1800, 2);
   }
 }
