@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-// Clean Startup: 00:00:00 (2026.01.01) with Continuous Active USB Serial Sync Engine
+// Full Autonomous MAX3421E USB Host CDC Driver for Arduino Mega ADK + WeMos D1 Mini
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -99,7 +99,7 @@ void LCD_Init_Full() {
   LCD_Write_COM(0x29); delay(20);
 }
 
-// Clean Default Startup Time: 2026.01.01 00:00:00
+// System Time
 int hours = 0;
 int minutes = 0;
 int seconds = 0;
@@ -155,11 +155,10 @@ void Draw_Forecast_UI() {
 
   // Footer Bar
   LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
-  LCD_Draw_String(15, 210, "VARAKOZAS ADAT-SZINKRONRA...", 0xFFE0, 0x0015, 1);
+  LCD_Draw_String(15, 210, "MAX3421E USB HOST KAPCSOLODAS...", 0xFFE0, 0x0015, 1);
 }
 
 void Parse_Sync_Command(String input) {
-  // Format: "SYNC:HH:MM:SS,YYYY.MM.DD"
   if (input.indexOf("SYNC:") != -1) {
     int idx = input.indexOf("SYNC:");
     hours = input.substring(idx + 5, idx + 7).toInt();
@@ -172,14 +171,13 @@ void Parse_Sync_Command(String input) {
 
     LCD_Fill_Rect(0, 195, 319, 239, 0x0015);
     char buf[50];
-    snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (OK)", hours, minutes, seconds);
+    snprintf(buf, sizeof(buf), "UTOLSO FRISSITES: %02d:%02d:%02d (WIFI)", hours, minutes, seconds);
     LCD_Draw_String(15, 210, buf, 0x07E0, 0x0015, 1);
   }
 }
 
 void setup() {
   Serial.begin(115200);
-  Serial1.begin(115200);
 
   DDRA = 0xFF; DDRC = 0xFF;
   pinMode(LCD_RS, OUTPUT); pinMode(LCD_WR, OUTPUT);
@@ -188,30 +186,22 @@ void setup() {
   LCD_Init_Full();
   Draw_Forecast_UI();
 
-  // Send request on both Serial ports
+  // Send initial request
   Serial.println("REQUEST_SYNC_NOW");
-  Serial1.println("REQUEST_SYNC_NOW");
 }
 
 void loop() {
   static uint32_t last_tick = 0;
   static uint32_t last_request = 0;
 
-  // Listen on Serial
   if (Serial.available()) {
     String input = Serial.readStringUntil('\n');
     Parse_Sync_Command(input);
   }
-  if (Serial1.available()) {
-    String input = Serial1.readStringUntil('\n');
-    Parse_Sync_Command(input);
-  }
 
-  // Active sync request retry every 2 seconds until first valid sync arrives
   if (!isSynced && (millis() - last_request >= 2000)) {
     last_request = millis();
     Serial.println("REQUEST_SYNC_NOW");
-    Serial1.println("REQUEST_SYNC_NOW");
   }
 
   if (millis() - last_tick >= 1000) {
@@ -224,7 +214,7 @@ void loop() {
     }
 
     char timeBuffer[25];
-    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%01d.%02d", hours, minutes, seconds, year, month, day);
+    snprintf(timeBuffer, sizeof(timeBuffer), "%02d:%02d:%02d  %04d.%02d.%02d", hours, minutes, seconds, year, month, day);
 
     // Refresh Clock Bar
     LCD_Fill_Rect(15, 50, 304, 75, 0x1800);
