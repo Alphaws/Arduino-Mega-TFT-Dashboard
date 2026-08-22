@@ -3,7 +3,7 @@
 #include <cdcftdi.h>
 #include <cdcacm.h>
 
-// Full Native MAX3421E USB Host Driver (FTDI + CDC/ACM Dual Parser) for Mega ADK
+// Full Native MAX3421E USB Host Driver + Force Bus Reading & Low-Level Register Override
 #define LCD_RS 38
 #define LCD_WR 39
 #define LCD_CS 40
@@ -111,7 +111,7 @@ class FTDIAsync : public FTDIAsyncOper {
 public:
   uint8_t OnInit(FTDI *pftdi) {
     pftdi->SetBaudRate(115200);
-    Log_To_TFT_Footer("CH340/FTDI ESZKOZ FELISMERVE!", 0x07E0);
+    Log_To_TFT_Footer("CH340 ESZKOZ FELISMERVE!", 0x07E0);
     return 0;
   }
 };
@@ -120,7 +120,6 @@ USB Usb;
 FTDIAsync FtdiAsync;
 FTDI Ftdi(&Usb, &FtdiAsync);
 
-// CDC/ACM Driver Fallback for WeMos D1 Mini V3.0 CDC Class
 CDCAsyncOper CdcAsyncOper;
 ACM Acm(&Usb, &CdcAsyncOper);
 
@@ -175,7 +174,7 @@ void Draw_Forecast_UI() {
 
   Draw_Forecast_Cards();
 
-  Log_To_TFT_Footer("MAX3421E USB HOST CH340/ACM...", 0xFFE0);
+  Log_To_TFT_Footer("MAX3421E FORCE BUS READ...", 0xFFE0);
 }
 
 void Parse_Sync_Command(String input) {
@@ -208,7 +207,7 @@ void setup() {
   if (Usb.Init() == -1) {
     Log_To_TFT_Footer("USB HOST CHIP HIBA (-1)", 0xF800);
   } else {
-    Log_To_TFT_Footer("USB HOST OK, WEMOS KERESES...", 0xFFE0);
+    Log_To_TFT_Footer("USB BUS OVERRIDE FORCE READ!", 0xFFE0);
   }
   delay(200);
 }
@@ -219,44 +218,32 @@ void loop() {
 
   Usb.Task();
 
+  // FORCE READ OVERRIDE: Ignore USB_STATE_WAIT_FOR_DEVICE (0x12) and force read
+  uint8_t rcode;
+  uint8_t buf[64];
+  uint16_t rcvd = 64;
+
+  // Force Poll FTDI/CH340
+  rcode = Ftdi.RcvData(&rcvd, buf);
+  if (rcode == 0 && rcvd > 0) {
+    buf[rcvd] = 0;
+    Parse_Sync_Command((char*)buf);
+  }
+
+  // Force Poll CDC/ACM
+  rcvd = 64;
+  rcode = Acm.RcvData(&rcvd, buf);
+  if (rcode == 0 && rcvd > 0) {
+    buf[rcvd] = 0;
+    Parse_Sync_Command((char*)buf);
+  }
+
   if (!isSynced && (millis() - last_status_check >= 2500)) {
     last_status_check = millis();
     uint8_t state = Usb.getUsbTaskState();
-    if (state == USB_STATE_RUNNING) {
-      if (Ftdi.isReady() || Acm.isReady()) {
-        Log_To_TFT_Footer("WEMOS KESZ, ADATRA VAR...", 0x07E0);
-      } else {
-        Log_To_TFT_Footer("USB BUSZ FUT, ESZKOZ ILLESZTES...", 0xFFE0);
-      }
-    } else {
-      char statusBuf[40];
-      snprintf(statusBuf, sizeof(statusBuf), "USB STATE: 0x%02X (VARAKOZAS)", state);
-      Log_To_TFT_Footer(statusBuf, 0xFEE0);
-    }
-  }
-
-  // Poll Data from FTDI (CH340) Driver
-  if (Ftdi.isReady()) {
-    uint8_t rcode;
-    uint8_t buf[64];
-    uint16_t rcvd = 64;
-    rcode = Ftdi.RcvData(&rcvd, buf);
-    if (rcode == 0 && rcvd > 0) {
-      buf[rcvd] = 0;
-      Parse_Sync_Command((char*)buf);
-    }
-  }
-
-  // Poll Data from CDC/ACM Driver
-  if (Acm.isReady()) {
-    uint8_t rcode;
-    uint8_t buf[64];
-    uint16_t rcvd = 64;
-    rcode = Acm.RcvData(&rcvd, buf);
-    if (rcode == 0 && rcvd > 0) {
-      buf[rcvd] = 0;
-      Parse_Sync_Command((char*)buf);
-    }
+    char statusBuf[40];
+    snprintf(statusBuf, sizeof(statusBuf), "BUS FORCE READ (STATE: 0x%02X)", state);
+    Log_To_TFT_Footer(statusBuf, 0xFFE0);
   }
 
   if (millis() - last_tick >= 1000) {
